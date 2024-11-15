@@ -1,10 +1,8 @@
 from flask import app, request, jsonify
 from flaskr.app import *
 from flaskr.models import *
-from werkzeug.utils import secure_filename
 from functools import wraps
 import jwt
-import os
 
 
 def token_required(f):
@@ -23,13 +21,11 @@ def token_required(f):
             if not current_user:
                 return jsonify({'message': 'ユーザーが見つかりません'}), 404
 
-            user_info = {
+            current_user = {
                 "username": current_user.username,
                 "user_id": current_user.id,
                 "user_profile_image": current_user.profile_image
             }
-        except jwt.ExpiredSignatureError:
-            return jsonify({'message': 'トークンの期限が切れています'}), 401
         except jwt.InvalidTokenError:
             return jsonify({'message': '無効なトークンです'}), 401
 
@@ -73,7 +69,6 @@ def home(user):
 
 
 @app.route('/login', methods=['POST'])
-@token_required
 def login():#ログイン
     data = request.json
     user = User.query.filter_by(username=data.get("username")).first()
@@ -261,18 +256,16 @@ def commit(user, project_id):
     project = Project.query.get_or_404(project_id)
 
     commit_message = request.json.get('commit_message')
-    commit_image = request.files.get('commit_image')
+    commit_image = request.form.get('commit_image')
     
     if commit_image:
-        filename = secure_filename(commit_image.filename)
-        filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-        commit_image.save(filepath)
+        image_binary = commit_image.read()
     else:
         return '', 400
 
     new_commit = Commit(
         commit_message=commit_message,
-        commit_image=filepath,
+        commit_image=image_binary,
         project_id=project.id,
         user_id=user.id
     )
