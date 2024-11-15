@@ -39,12 +39,6 @@ class User(db.Model):
         db.session.commit()
         return token
 
-class Guest:
-    def __init__(self):
-        self.id = None
-        self.username = None
-        self.profile_image = None
-
 class Project(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     date_posted = db.Column(db.DateTime, default=get_japan_time, nullable=False)

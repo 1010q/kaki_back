@@ -1,14 +1,10 @@
-from flask import app, request, send_from_directory, jsonify
+from flask import app, request, jsonify
 from flaskr.app import *
 from flaskr.models import *
 from werkzeug.utils import secure_filename
 from functools import wraps
 import jwt
 import os
-
-@app.route('/uploads/<filename>')
-def uploads(filename):
-    return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
 
 
 def token_required(f):
@@ -41,23 +37,6 @@ def token_required(f):
     return decorated_function
 
 #＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿ここからエンドポイント＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿
-
-@app.route('/userinfo', methods=['GET'])
-def userinfo(user=None):
-    if user is None:
-        user = Guest()
-        response_data = {
-            "username": None,
-            "profile_image": None
-        }
-        return jsonify(response_data),200
-    
-    response_data = {
-        "username": user.username,
-        "profile_image": user.get_profile_image()
-    }
-    return jsonify(response_data),200
-
 
 @app.route('/', methods=['GET'])
 @token_required
@@ -196,10 +175,8 @@ def make_project(user):
 
 @app.route('/project/<int:project_id>', methods=['GET', 'PATCH', 'DELETE'])
 @token_required
-def project_detail(project_id,user):
+def project_detail(user):
     project_id = request.view_args.get('project_id')
-    if user is None:
-        user = Guest()
     project = Project.query.get_or_404(project_id)
     star_entry = db.session.execute(stars_table.select().where(stars_table.c.user_id == user.id,stars_table.c.project_id == project.id)).fetchone()
     
