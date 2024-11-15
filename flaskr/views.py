@@ -4,7 +4,6 @@ from flaskr.models import *
 from functools import wraps
 import jwt
 
-
 def token_required(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
@@ -13,7 +12,12 @@ def token_required(f):
             token = request.headers['Authorization'].split(" ")[1]
 
         if not token:
-            return jsonify({'message': 'トークンが必要です'}), 401
+            class GuestUser:
+                id = None
+                username = "Guest"
+                profile_image = None
+            guest_user = GuestUser()
+            return f(guest_user, *args, **kwargs)
 
         try:
             data = jwt.decode(token, app.config['SECRET_KEY'], algorithms=["HS256"])
@@ -31,7 +35,6 @@ def token_required(f):
 
         return f(current_user, *args, **kwargs)
     return decorated_function
-
 #＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿ここからエンドポイント＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿
 
 @app.route('/', methods=['GET'])
