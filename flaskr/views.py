@@ -2,6 +2,7 @@ from flask import app, request, jsonify
 from flaskr.app import *
 from flaskr.models import *
 from functools import wraps
+import base64
 import jwt
 
 def token_required(f):
@@ -14,9 +15,10 @@ def token_required(f):
         if not token:
             class GuestUser:
                 id = None
-                username = "Guest"
+                username = None
                 profile_image = None
             guest_user = GuestUser()
+
             return f(guest_user, *args, **kwargs)
 
         try:
@@ -25,22 +27,29 @@ def token_required(f):
             if not current_user:
                 return jsonify({'message': 'ユーザーが見つかりません'}), 404
 
-            current_user = {
-                "username": current_user.username,
-                "user_id": current_user.id,
-                "user_profile_image": current_user.profile_image
-            }
         except jwt.InvalidTokenError:
             return jsonify({'message': '無効なトークンです'}), 401
 
         return f(current_user, *args, **kwargs)
     return decorated_function
+
 #＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿ここからエンドポイント＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿
+
+@app.route('/userinfo', methods=['GET'])
+@token_required
+def userinfo(user):
+    current_user = {
+                "username": user.username,
+                "user_id": user.id,
+                "profile_image": user.profile_image
+            }
+    return jsonify(current_user), 200
+
 
 @app.route('/', methods=['GET'])
 @token_required
-def home(user):
-    notifications = Notification.query.filter_by(user_id=user.id, status='pending').all()
+def home(current_ser):
+    notifications = Notification.query.filter_by(user_id=current_ser.id, status='pending').all()
     search_query = request.args.get('search', '')
     sort_order = request.args.get('sort', 'stars')
 
@@ -53,22 +62,35 @@ def home(user):
         )
 
     if sort_order == 'stars':
-        project_query = project_query.join(stars_table).group_by(Project.id).order_by(db.func.count(stars_table.c.project_id).desc())
+        project_query = project_query.order_by(Project.star_count.desc())
     else:
-        project_query = project_query.order_by(Project.date_posted.desc())
+        project_query = project_query.order_by(Project.created_at.desc())
 
     projects = project_query.all()
+    latest_commits = Commit.query.filter(Commit.project_id.in_([project.id for project in projects])) \
+    .order_by(Commit.project_id, Commit.id.desc()).all()
+
+    latest_commit_dict = {}
+    for commit in latest_commits:
+        latest_commit_dict[commit.project_id] = commit
 
     project_data = [
-        {"id": project.id, "name": project.name, "description": project.description, "created_user": project.user_id, "created_at": project.date_posted}
-        for project in projects
-    ]
+    {
+        "id": project.id,
+        "name": project.name,
+        "description": project.description,
+        "created_user": project.user_name,
+        "created_at": project.created_at,
+        "latest_commit_image": latest_commit_dict.get(project.id).commit_image if latest_commit_dict.get(project.id) else ''
+    }
+    for project in projects
+]
     notification_data = [
         {"id": notification.id, "type": notification.type, "created_at": notification.created_at}
         for notification in notifications
     ]
 
-    return jsonify({"projects": project_data, "notifications": notification_data, "user_id": user.id}),200
+    return jsonify({"projects": project_data, "notifications": notification_data, "user_id": current_ser.id}),200
 
 
 @app.route('/login', methods=['POST'])
@@ -108,19 +130,20 @@ def register():#登録
 
 @app.route('/profile/<int:user_id>', methods=['GET','POST'])
 @token_required
-def profile(user):
+def profile(current_user, user_id):
+    user = User.query.get(user_id)
     if request.method == 'POST':
         profile_image = request.form.get('profile_image')
-        
-        
+
         if profile_image:
             image_binary = profile_image.read()
-            user.profile_image = image_binary
+            image_base64 = base64.b64encode(image_binary).decode('utf-8')
+            user.profile_image = image_base64
             db.session.commit()
             return jsonify(message='プロフィール画像が更新されました。'), 200
 
     projects = Project.query.filter_by(user_id=user.id).all()
-    
+
     response_data = {
         "username": user.username,
         "projects": [{
@@ -137,16 +160,17 @@ def profile(user):
 
 @app.route('/makeproject', methods=['POST'])
 @token_required
-def make_project(user):
-    data = request.json
+def make_project(current_user):
+    data = request.form
     project_name = data.get('project_name')
     project_description = data.get('project_description')
     tags = data.get('tags', '').split(',')
     commit_message = data.get('commit_message')
-    commit_image = request.form.get('commit_image')
+    commit_image = request.files.get('commit_image')
 
     if commit_image:
         image_binary = commit_image.read()
+        image_base64 = base64.b64encode(image_binary).decode('utf-8')
     else:
         return '', 400
 
@@ -154,16 +178,17 @@ def make_project(user):
         name=project_name,
         description=project_description,
         tags=tags,
-        user_id=user.id
+        user_name=current_user.username
     )
+    new_project.members.append(current_user)
     db.session.add(new_project)
     db.session.commit()
 
     new_commit = Commit(
         commit_message=commit_message,
-        commit_image=image_binary,
+        commit_image=image_base64,
         project_id=new_project.id,
-        user_id=user.id
+        user_name=current_user.username
     )
     db.session.add(new_commit)
     db.session.commit()
@@ -173,10 +198,9 @@ def make_project(user):
 
 @app.route('/project/<int:project_id>', methods=['GET', 'PATCH', 'DELETE'])
 @token_required
-def project_detail(user):
-    project_id = request.view_args.get('project_id')
+def project_detail(current_user, project_id):
     project = Project.query.get_or_404(project_id)
-    star_entry = db.session.execute(stars_table.select().where(stars_table.c.user_id == user.id,stars_table.c.project_id == project.id)).fetchone()
+    star_entry = db.session.execute(stars_table.select().where(stars_table.c.user_id == current_user.id,stars_table.c.project_id == project.id)).fetchone()
     
     if request.method == 'PATCH':
         action = request.json.get('action')
@@ -189,14 +213,14 @@ def project_detail(user):
             if star_entry:
                 db.session.execute(
                     stars_table.delete().where(
-                        stars_table.c.user_id == user.id,
+                        stars_table.c.user_id == current_user.id,
                         stars_table.c.project_id == project.id
                     )
                 )
                 project.star_count -= 1
             else:
                 db.session.execute(
-                    stars_table.insert().values(user_id=user.id, project_id=project.id, starred=True)
+                    stars_table.insert().values(user_id=current_user.id, project_id=project.id, starred=True)
                 )
                 project.star_count += 1
 
@@ -209,14 +233,19 @@ def project_detail(user):
         return '', 200
 
     latest_commit = Commit.query.filter_by(project_id=project.id).order_by(Commit.id.desc()).first()
+    project_members_info = [{"user_id": member.id, "username": member.username, "profile_image": member.profile_image} for member in project.members]
+    commit_count = len(project.commits)
     return jsonify(
         project_id=project.id,
         name=project.name,
         description=project.description,
         is_public=project.is_public,
+        created_at=project.created_at,
         latest_commit_image=latest_commit.commit_image,
-        created_user=project.user_id,
-        project_member=project.members,
+        latest_commit_message=latest_commit.commit_message,
+        created_user=project.user_name,
+        project_member=project_members_info,
+        commit_count=commit_count,
         project_star_count=project.star_count,
         star_entry=star_entry
     ), 200
@@ -224,9 +253,9 @@ def project_detail(user):
 
 @app.route('/project/<int:project_id>/invite', methods=['GET', 'POST'])
 @token_required
-def invite_user(project_id):
+def invite_user(current_user, project_id):
     project = Project.query.get_or_404(project_id)
-    
+    project_members_info = [{"user_id": member.id, "username": member.username, "profile_image": member.profile_image} for member in project.members]
     search_query = request.args.get('search', '')
     users = []
     
@@ -236,7 +265,7 @@ def invite_user(project_id):
     if request.method == 'POST':
         user_id = request.json.get('user_id')
         user_to_invite = User.query.get(user_id)
-        
+
         if user_to_invite:
             notification = Notification(
                 project_name=project.name,
@@ -247,37 +276,38 @@ def invite_user(project_id):
             db.session.add(notification)
             db.session.commit()
             return jsonify(message=f'{user_to_invite.username}が招待されました。'), 200
-        
+
         return '', 404
 
-    return jsonify(project_member=project.members, users=[{"id": user.id, "username": user.username, "user_image": user.profile_image} for user in users]), 200
+    return jsonify( project_member=project_members_info, users=[{"id": user.id, "username": user.username, "user_image": user.profile_image} for user in users]), 200
 
 
 @app.route('/project/<int:project_id>/commit', methods=['POST'])
 @token_required
-def commit(user, project_id):
+def commit(current_user, project_id):
     project = Project.query.get_or_404(project_id)
 
-    commit_message = request.json.get('commit_message')
-    commit_image = request.form.get('commit_image')
+    commit_message = request.form.get('commit_message')
+    commit_image = request.files.get('commit_image')
     
     if commit_image:
         image_binary = commit_image.read()
+        image_base64 = base64.b64encode(image_binary).decode('utf-8')
     else:
         return '', 400
 
     new_commit = Commit(
         commit_message=commit_message,
-        commit_image=image_binary,
+        commit_image=image_base64,
         project_id=project.id,
-        user_id=user.id
+        user_name=current_user.username
     )
     db.session.add(new_commit)
     db.session.commit()
 
     users = project.members
     for member in users:
-        if member.id != user.id:
+        if member.id != current_user.id:
             notification = Notification(
                 created_at=notification.created_at,
                 type="commit",
@@ -293,21 +323,22 @@ def commit(user, project_id):
 
 @app.route('/project/<int:project_id>/commits')
 @token_required
-def commits(project_id):
+def commits(current_user, project_id):
     project = Project.query.get_or_404(project_id)
     commits = Commit.query.filter_by(project_id=project.id).order_by(Commit.id.desc()).all()
 
     return jsonify(commits=[{
         "id": commit.id,
+        "created_user": commit.user_name,
         "commit_message": commit.commit_message,
         "commit_image": commit.commit_image,
-        "created_at": commit.date_posted
+        "created_at": commit.created_at
     } for commit in commits]), 200
 
 
 @app.route('/project/<int:project_id>/commit/<int:commit_id>', methods=['GET', 'POST'])
 @token_required
-def commit_detail(user, project_id, commit_id):
+def commit_detail(current_user, project_id, commit_id):
     project = Project.query.get_or_404(project_id)
     commit = Commit.query.get_or_404(commit_id)
     
@@ -316,13 +347,13 @@ def commit_detail(user, project_id, commit_id):
         content = data.get('content')
         
         if content:
-            comment = CommitComment(content=content, commit_id=commit.id, user_id=user.id)
+            comment = CommitComment(content=content, commit_id=commit.id, user_id=current_user.id)
             db.session.add(comment)
             db.session.commit()
 
             users = project.members
             for member in users:
-                if member.id != user.id:
+                if member.id != current_user.id:
                     notification = Notification(
                         created_at=notification.created_at,
                         type="comment",
@@ -346,7 +377,8 @@ def commit_detail(user, project_id, commit_id):
         'created_at': comment.created_at,
         'user': {
             'id': comment.user.id,
-            'username': comment.user.username
+            'username': comment.user.username,
+            'profile_image': comment.user.profile_image
         }
     } for comment in comments]
 
@@ -354,6 +386,7 @@ def commit_detail(user, project_id, commit_id):
         project_id=project.id,
         project_name=project.name,
         commit_id=commit.id,
+        created_user=commit.user_name,
         commit_message=commit.commit_message,
         commit_image=commit.commit_image,
         created_at=commit.created_at,
@@ -363,15 +396,15 @@ def commit_detail(user, project_id, commit_id):
 
 @app.route('/notification/<int:notification_id>/respond/<string:response>', methods=['PATCH'])
 @token_required
-def respond_to_invitation(user, notification, response):
+def respond_to_invitation(current_user, notification, response):
     data = request.get_json()
     response = data.get('response')
-    notification = Notification.query.filter_by(user_id=user.id).all()
+    notification = Notification.query.filter_by(user_id=current_user.id).all()
     
     if response == 'accept':
         notification.status = 'accepted'
         project = notification.project
-        project.members.append(user)
+        project.members.append(current_user)
         db.session.commit()
         return '', 200
     

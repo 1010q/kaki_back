@@ -2,12 +2,14 @@ from flask import Flask
 from flask_sqlalchemy import SQLAlchemy
 from flask_migrate import Migrate
 from flask_cors import CORS
+import os
 
 app = Flask(__name__)
 CORS(app)
 app.config.from_pyfile('/opt/render/project/src/instance/config.py')
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///app.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY') or 'miso893-shiru777-wakame3'
 
 db = SQLAlchemy(app)
 migrate = Migrate(app, db)
