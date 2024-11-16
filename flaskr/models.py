@@ -43,7 +43,7 @@ class Project(db.Model):
     name = db.Column(db.String(128), nullable=False)
     description = db.Column(db.Text, nullable=False)
     tags = db.Column(db.PickleType, nullable=True)
-    user_name = db.Column(db.Integer, db.ForeignKey('user.name'), nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
     stars = db.Column(db.Integer)
     star_count = db.Column(db.Integer, default=0)
 
@@ -65,7 +65,7 @@ class Commit(db.Model):
     commit_message = db.Column(db.String(256), nullable=False)
     commit_image = db.Column(db.Text)
     project_id = db.Column(db.Integer, db.ForeignKey('project.id'), nullable=False)
-    user_name = db.Column(db.Integer, db.ForeignKey('user.name'), nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
 
     project = db.relationship('Project', back_populates='commits')
     user = db.relationship('User', backref=db.backref('commits', lazy=True))
