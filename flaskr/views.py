@@ -428,10 +428,10 @@ def commit_detail(current_user, project_id, commit_id):
 
 @app.route('/notification/<int:notification_id>/respond/<string:response>', methods=['PATCH'])
 @token_required
-def respond_to_invitation(current_user, notification, response):
+def respond_to_invitation(current_user, notification_id, response):
     data = request.get_json()
     response = data.get('response')
-    notification = Notification.query.filter_by(user_id=current_user.id).all()
+    notification = Notification.query.filter_by(id=notification_id).first_or_404()
     
     if response == 'accept':
         notification.status = 'accepted'
