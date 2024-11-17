@@ -62,7 +62,7 @@ def home(current_user):
         )
 
     if sort_order == 'stars':
-        project_query = project_query.order_by(Project.star_count.desc())
+        project_query = project_query.order_by(Project.star_count.desc(), Project.created_at.desc())
     else:
         project_query = project_query.order_by(Project.created_at.desc())
 
