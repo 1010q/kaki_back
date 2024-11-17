@@ -70,9 +70,12 @@ def home(current_user):
     latest_commits = Commit.query.filter(Commit.project_id.in_([project.id for project in projects])) \
     .order_by(Commit.project_id, Commit.id.desc()).all()
 
-    latest_commit_dict = {}
-    for commit in latest_commits:
-        latest_commit_dict[commit.project_id] = commit
+    latest_commits = db.session.query(Commit).join(
+    db.session.query(Commit.project_id, db.func.max(Commit.id).label('max_commit_id'))
+    .group_by(Commit.project_id)
+    .subquery()
+    ).filter(Commit.id == db.func.max(Commit.id)).all()
+    latest_commit_dict = {commit.project_id: commit for commit in latest_commits}
 
     project_data = [
         {
@@ -344,7 +347,7 @@ def commit(current_user, project_id):
                 to_user_id=member.id,
                 from_user_id=current_user.id,
                 project_id=project.id,
-                commit_id=commit.id
+                commit_id=new_commit.id
             )
             db.session.add(notification)
     db.session.commit()
