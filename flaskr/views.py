@@ -99,7 +99,8 @@ def home(current_user):
             },
             "project": {
                 "name": notification.project.name,
-                "project_id": notification.project.id
+                "project_id": notification.project.id,
+                 "project_star_count": notification.project.star_count,
             },
             "commit": {
                 "commit_id": notification.commit.id if notification.commit else None,
@@ -173,7 +174,8 @@ def profile(current_user, user_id):
             "id": project.id,
             "name": project.name,
             "created_user":project.user.username,
-            "latest_commit_image": project.commits[-1].commit_image
+            "latest_commit_image": project.commits[-1].commit_image,
+             "project_star_count": project.star_count,
         } for project in projects],
         "profile_image": user.profile_image,
         "user_id":user.id
@@ -223,8 +225,7 @@ def make_project(current_user):
 @token_required
 def project_detail(current_user, project_id):
     project = Project.query.get_or_404(project_id)
-    star_entry = db.session.execute(stars_table.select().where(stars_table.c.user_id == current_user.id,stars_table.c.project_id == project.id)).fetchone()
-    
+    star_entry = db.session.execute(stars_table.select().where(stars_table.c.user_id == current_user.id,stars_table.c.project_id == project.id)).fetchone() is not None    
     if request.method == 'PATCH':
         action = request.json.get('action')
         if action == 'toggle_visibility':
