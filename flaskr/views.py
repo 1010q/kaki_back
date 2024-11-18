@@ -5,7 +5,7 @@ from functools import wraps
 import base64
 import jwt
 
-def token_required(f):
+def token_required(f): #トークン検証用デコレータ　　戻り値はuserインスタンス
     @wraps(f)
     def decorated_function(*args, **kwargs):
         token = None
@@ -37,7 +37,7 @@ def token_required(f):
 
 @app.route('/userinfo', methods=['GET'])
 @token_required
-def userinfo(user):
+def userinfo(user): #user情報提供
     current_user = {
                 "username": user.username,
                 "user_id": user.id,
@@ -48,14 +48,14 @@ def userinfo(user):
 
 @app.route('/', methods=['GET'])
 @token_required
-def home(current_user):
+def home(current_user): # ホーム　戻り値は通知とプロジェクトデータ
     notifications = Notification.query.filter_by(to_user_id=current_user.id, status='pending').all()
     search_query = request.args.get('search', '')
-    sort_order = request.args.get('sort', 'stars')
+    sort_order = request.args.get('sort', 'stars') # 作成日時とスターの数でソート、フロント側に切り替えるボタンはない😭 デフォルトスター
 
     project_query = Project.query.filter(Project.is_public == True)
 
-    if search_query:
+    if search_query: # 検索ボックス内の文字の部分文字列を持つタイトルおよび概要で絞り込み
         project_query = project_query.filter(
             (Project.name.like(f'%{search_query}%') |
              Project.description.like(f'%{search_query}%'))
@@ -115,7 +115,7 @@ def home(current_user):
 
 
 @app.route('/login', methods=['POST'])
-def login():#ログイン　　
+def login(): # ログイン　　
     data = request.json
     user = User.query.filter_by(username=data.get("username")).first()
 
@@ -128,7 +128,7 @@ def login():#ログイン　　
 
 @app.route('/logout', methods=['GET'])
 @token_required
-def logout():#ログアウト
+def logout(): # ログアウト
     return '', 200
 
 
@@ -154,7 +154,7 @@ def register():  # 登録
 
 @app.route('/profile/<int:user_id>', methods=['GET','POST'])
 @token_required
-def profile(current_user, user_id):
+def profile(current_user, user_id): # ユーザープロフィール　他の人のプロフィールでPrivate設定のプロジェクトも表示されてしまう😭
     user = User.query.get(user_id)
     if request.method == 'POST':
         profile_image = request.files.get('profile_image')
@@ -185,8 +185,8 @@ def profile(current_user, user_id):
 
 @app.route('/makeproject', methods=['POST'])
 @token_required
-def make_project(current_user):
-    data = request.form
+def make_project(current_user): # プロジェクト作成　初回コミットを必須にしている　tagsは機能していない
+    data = request.form # 画像を扱うためJSONではなくformである
     project_name = data.get('project_name')
     project_description = data.get('project_description')
     tags = data.get('tags', '').split(',')
@@ -223,17 +223,17 @@ def make_project(current_user):
 
 @app.route('/project/<int:project_id>', methods=['GET', 'PATCH', 'DELETE'])
 @token_required
-def project_detail(current_user, project_id):
+def project_detail(current_user, project_id): # プロジェクト詳細　deleteを用意しているがdbのリレーションが増えたので機能していないかも。フロントにdeleteメソッドを送るボタンはない😭
     project = Project.query.get_or_404(project_id)
     star_entry = db.session.execute(stars_table.select().where(stars_table.c.user_id == current_user.id,stars_table.c.project_id == project.id)).fetchone() is not None    
     if request.method == 'PATCH':
-        action = request.json.get('action')
+        action = request.json.get('action') # プロジェクトの公開設定の変更。同じリクエストで切り替わる
         if action == 'toggle_visibility':
             project.is_public = not project.is_public
             db.session.commit()
             return '', 200
 
-        elif action == 'toggle_star':
+        elif action == 'toggle_star': # スターの変更　上と同じ
             if star_entry:
                 db.session.execute(
                     stars_table.delete().where(
@@ -284,7 +284,7 @@ def project_detail(current_user, project_id):
 
 @app.route('/project/<int:project_id>/invite', methods=['GET', 'POST'])
 @token_required
-def invite_user(current_user, project_id):
+def invite_user(current_user, project_id): # プロジェクトに他のユーザーを招待　
     project = Project.query.get_or_404(project_id)
     project_members_info = [{"user_id": member.id, "username": member.username, "profile_image": member.profile_image} for member in project.members]
     search_query = request.args.get('search', '')
@@ -297,7 +297,7 @@ def invite_user(current_user, project_id):
         user_id = request.json.get('user_id')
         user_to_invite = User.query.get(user_id)
 
-        if user_to_invite:
+        if user_to_invite: # 招待されたユーザー宛に通知を作成
             notification = Notification(
                 project_id=project.id,
                 type="invite",
@@ -315,7 +315,7 @@ def invite_user(current_user, project_id):
 
 @app.route('/project/<int:project_id>/commit', methods=['POST'])
 @token_required
-def commit(current_user, project_id):
+def commit(current_user, project_id): # 新規コミット作成　JSONではなくform
     project = Project.query.get_or_404(project_id)
 
     commit_message = request.form.get('commit_message')
@@ -337,7 +337,7 @@ def commit(current_user, project_id):
     db.session.commit()
 
     users = project.members
-    for member in users:
+    for member in users: # コミット作成者以外のプロジェクトメンバー宛に通知を作成
         if member.id != current_user.id:
             notification = Notification(
                 type="commit",
@@ -354,7 +354,7 @@ def commit(current_user, project_id):
 
 @app.route('/project/<int:project_id>/commits')
 @token_required
-def commits(current_user, project_id):
+def commits(current_user, project_id): # コミット一覧
     project = Project.query.get_or_404(project_id)
     commits = Commit.query.filter_by(project_id=project.id).order_by(Commit.id.desc()).all()
 
@@ -371,7 +371,7 @@ def commits(current_user, project_id):
 
 @app.route('/project/<int:project_id>/commit/<int:commit_id>', methods=['GET', 'POST'])
 @token_required
-def commit_detail(current_user, project_id, commit_id):
+def commit_detail(current_user, project_id, commit_id): # コミット詳細　
     project = Project.query.get_or_404(project_id)
     commit = Commit.query.get_or_404(commit_id)
     
@@ -386,7 +386,7 @@ def commit_detail(current_user, project_id, commit_id):
 
             users = project.members
             for member in users:
-                if member.id != current_user.id:
+                if member.id != current_user.id: # コメントしたuser以外のprojectメンバー宛に通知を作成
                     notification = Notification(
                         type="comment",
                         to_user_id=member.id,
@@ -429,7 +429,7 @@ def commit_detail(current_user, project_id, commit_id):
 
 @app.route('/notification/<int:notification_id>/respond/<string:response>', methods=['PATCH'])
 @token_required
-def respond_to_invitation(current_user, notification_id, response):
+def respond_to_invitation(current_user, notification_id, response): # プロジェクト招待通知の応答
     data = request.get_json()
     response = data.get('response')
     notification = Notification.query.filter_by(id=notification_id).first_or_404()
