@@ -5,7 +5,7 @@ from datetime import datetime
 import pytz
 import jwt
 
-japan_timezone = pytz.timezone('Asia/Tokyo')
+japan_timezone = pytz.timezone('Asia/Tokyo') # created_atで作成日時を所得
 def get_japan_time():
     return datetime.now(japan_timezone)
 
@@ -20,9 +20,9 @@ class User(db.Model):
     username = db.Column(db.String(20), unique=True, nullable=False)
     password_hash = db.Column(db.String(128), nullable=False)
     token = db.Column(db.String(256), nullable=True, unique=True)
-    profile_image = db.Column(db.Text, nullable=True, default=None)
+    profile_image = db.Column(db.Text, nullable=True, default=None) # 画像はバイナリデータで扱っている
 
-    stars = db.relationship('Project', secondary=stars_table, backref=db.backref('stargazers'))
+    stars = db.relationship('Project', secondary=stars_table, backref=db.backref('stargazers')) # どのユーザーがどのプロジェクトにスターをつけたか記録するためのリレーション
     
 
     def set_password(self, password):
@@ -31,7 +31,7 @@ class User(db.Model):
     def check_password(self, password):
         return check_password_hash(self.password_hash, password)
 
-    def generate_token(self):
+    def generate_token(self): # トークン作成　idで作成している
         payload = {"user_id": self.id}
         token = jwt.encode(payload, current_app.config['SECRET_KEY'], algorithm="HS256")
         self.token = token
@@ -86,11 +86,11 @@ class CommitComment(db.Model):
 
 class Notification(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    to_user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
-    from_user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
-    type = db.Column(db.String(20), nullable=False)
+    to_user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False) # 通知の宛先
+    from_user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False) # 通知の作成者
+    type = db.Column(db.String(20), nullable=False) # 通知の種類　invite,commit,comment
     created_at = db.Column(db.DateTime, default=get_japan_time, nullable=False)
-    status = db.Column(db.String(20), default='pending')
+    status = db.Column(db.String(20), default='pending') # 通知の既読、未読。inviteにしか使っていないため、commit,commentの通知はずっと残る
     project_id = db.Column(db.Integer, db.ForeignKey('project.id'), nullable=False)
     commit_id = db.Column(db.Integer, db.ForeignKey('commit.id'), nullable=True)
 
