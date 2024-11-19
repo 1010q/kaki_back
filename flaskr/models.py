@@ -20,7 +20,7 @@ class User(db.Model):
     username = db.Column(db.String(20), unique=True, nullable=False)
     password_hash = db.Column(db.String(128), nullable=False)
     token = db.Column(db.String(256), nullable=True, unique=True)
-    profile_image = db.Column(db.Text, nullable=True, default=None) # 画像はバイナリデータで扱っている
+    profile_image = db.Column(db.Text, nullable=True, default=None) # 画像はバイナリデータをエンコードして扱っている
 
     stars = db.relationship('Project', secondary=stars_table, backref=db.backref('stargazers')) # どのユーザーがどのプロジェクトにスターをつけたか記録するためのリレーション
     
